@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --upgrade google-generativeai
 RUN pip install --no-cache-dir --upgrade --requirement requirements.txt
 
 COPY . .
