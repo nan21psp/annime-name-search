@@ -1,121 +1,85 @@
 import logging
-import requests
+import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Logging (Error တွေကို ကြည့်ဖို့)
+# --- ဒီနေရာတွေမှာ သင့် Key တွေကို အစားထိုးပါ ---
+TELEGRAM_TOKEN = "8256277265:AAGkyWGaeNtSOKV678v7ixJkoNZKUMvq44A"  # @BotFather က ရတဲ့ Token
+GEMINI_API_KEY = "AIzaSyBS4l0RUNfromJXWAWE1x6-R2oxNEHeqgw"    # Google AI Studio က ရတဲ့ Key
+# ----------------------------------------------
+
+# Gemini API ကို Configure လုပ်ခြင်း
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash') # 'gemini-pro' သို့မဟုတ် 'gemini-1.5-flash' သုံးနိုင်
+    chat = model.start_chat(history=[]) # Conversation history အတွက်
+    logging.info("Gemini AI Model ကို အောင်မြင်စွာ စတင်လိုက်ပါပြီ။")
+except Exception as e:
+    logging.error(f"Gemini API ကို စတင်ရာတွင် ပြဿနာဖြစ်နေပါသည်: {e}")
+    exit() # API Key မှားနေရင် ဆက်မလုပ်တော့ဘူး
+
+# Log တွေပြဖို့အတွက် Logging ကို setup လုပ်ခြင်း
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- သင့် BOT TOKEN ကို ဒီမှာထည့်ပါ ---
-TELEGRAM_TOKEN = "8256277265:AAGkyWGaeNtSOKV678v7ixJkoNZKUMvq44A" 
-# -----------------------------------
 
-TRACE_MOE_API_URL = "https://api.trace.moe/search"
-
-# /start command ကို ဖြေကြားမယ့် function
+# /start command အတွက် function
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """User က /start လို့ရိုက်ထည့်ရင် message ပို့မယ်။"""
-    user = update.effective_user
+    """User က /start လို့ရိုက်လိုက်ရင် ဒီစာကိုပို့မယ်။"""
+    user_name = update.effective_user.first_name
     await update.message.reply_html(
-        f"မင်္ဂလာပါ {user.mention_html()}! 👋\n\n"
-        f"ကျွန်တော်က ပုံထဲက Anime ကာရိုက်တာတွေကို ရှာပေးနိုင်ပါတယ်။ \n"
-        f"ကျွန်တော့်ကို ပုံတစ်ပုံ ပို့ပေးကြည့်ပါ။"
+        f"မင်္ဂလာပါ {user_name}။\n\nကျွန်တော်က Gemini AI နဲ့ ချိတ်ဆက်ထားတဲ့ Bot ပါ။"
+        f" သင်မေးချင်တာရှိရင် မေးနိုင်ပါတယ်။"
     )
 
-# ပုံ လက်ခံရရှိရင် အလုပ်လုပ်မယ့် function
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """User ပို့လိုက်တဲ့ ပုံကို လက်ခံပြီး trace.moe API ကိုပို့မယ်။"""
-    
-    # User ကို "ရှာနေတယ်" လို့ အရင် အကြောင်းပြန်ထားမယ်
-    await update.message.reply_text("ပုံကို လက်ခံရရှိပါတယ်။ ခဏလေးစောင့်ပြီး ရှာဖွေပေးပါမယ်...")
+
+# /clear command အတွက် (chat history ရှင်းဖို့)
+async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Chat history ကို ရှင်းလင်းပေးမယ်။"""
+    global chat
+    chat = model.start_chat(history=[]) # chat object အသစ်ပြန်ဆောက်
+    await update.message.reply_text("စကားပြောမှတ်တမ်း (Chat History) ကို ရှင်းလင်းပြီးပါပြီ။")
+
+
+# စာပို့လိုက်တိုင်း အလုပ်လုပ်မယ့် function
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """User ပို့လိုက်တဲ့ စာကို Gemini AI ဆီပို့ပြီး အဖြေပြန်တောင်းမယ်။"""
+    user_text = update.message.text
+    chat_id = update.message.chat_id
 
     try:
-        # ပို့လိုက်တဲ့ ပုံတွေထဲက resolution အများဆုံးပုံကို ယူမယ်
-        photo_file = await update.message.photo[-1].get_file()
+        # "Typing..." ဆိုပြီး user ကိုပြထားမယ်
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         
-        # ပုံကို download လုပ်ပြီး memory ထဲမှာ byte array အနေနဲ့ သိမ်းထားမယ်
-        file_bytes = await photo_file.download_as_bytearray()
+        # Gemini AI ဆီကို စာပို့ပြီး အဖြေတောင်းမယ်
+        response = chat.send_message(user_text)
         
-        # trace.moe API ကို ပုံ ပို့ပြီး ရှာခိုင်းမယ်
-        # anilist info ပါအောင် ?anilistInfo=true ထည့်ပေးပါမယ်
-        response = requests.post(f"{TRACE_MOE_API_URL}?anilistInfo=true", files={"image": file_bytes})
-        
-        # HTTP error (4xx, 5xx) တွေရှိမရှိ စစ်ဆေးမယ်
-        response.raise_for_status() 
-        
-        data = response.json()
-        
-        # API ကနေ အဖြေပြန်ရပြီး ရလဒ်ရှိ၊ မရှိ စစ်ဆေးမယ်
-        if data['result'] and len(data['result']) > 0:
-            # တူညီမှု အများဆုံး ရလဒ် (ပထမဆုံးတစ်ခု) ကို ယူမယ်
-            result = data['result'][0]
-            
-            # --- ERROR FIX START ---
-            
-            # အခြေခံ အချက်အလက်တွေကို အရင်ယူမယ်
-            similarity = result['similarity'] * 100 # % အနေနဲ့ပြမယ်
-            episode = result.get('episode', 'N/A')
-            filename = result.get('filename', 'N/A')
+        # Gemini ကပြန်လာတဲ့ အဖြေကို User ဆီပြန်ပို့မယ်
+        await update.message.reply_text(response.text)
 
-            # anilist data က dictionary ဟုတ်၊ မဟုတ် စစ်ဆေးမယ်
-            if result.get('anilist') and isinstance(result['anilist'], dict):
-                # Dictionary ဖြစ်မှသာ title တွေကို ဆက်ယူမယ်
-                anilist_data = result['anilist']
-                # .get() ကို သုံးခြင်းဖြင့် 'romaji' or 'native' မပါရင်တောင် error မတက်တော့ပါ
-                title_romaji = anilist_data['title'].get('romaji', 'N/A')
-                title_native = anilist_data['title'].get('native', 'N/A')
-                
-                reply_text = (
-                    f"ရှာတွေ့ပါပြီ! 🎉\n\n"
-                    f"<b>Anime (Romaji):</b> {title_romaji}\n"
-                    f"<b>Anime (Native):</b> {title_native}\n"
-                    f"<b>Episode:</b> {episode}\n"
-                    f"<b>တူညီမှု (Similarity):</b> {similarity:.2f}%\n"
-                )
-            else:
-                # anilist data က int (ID) or null ဖြစ်နေခဲ့ရင်
-                # Anime နာမည်မပြဘဲ တခြားအချက်အလက်ကိုပဲ ပြပေးမယ်
-                reply_text = (
-                    f"ရှာတွေ့ပါပြီ! 🎉\n\n"
-                    f"ဒီပုံကို Anime scene တစ်ခုအနေနဲ့ တွေ့ရပေမယ့် နာမည်အတိအကျ မရရှိပါဘူး။\n"
-                    f"<b>Source File:</b> {filename}\n"
-                    f"<b>Episode:</b> {episode}\n"
-                    f"<b>တူညီမှု (Similarity):</b> {similarity:.2f}%\n"
-                )
-            
-            # --- ERROR FIX END ---
-
-        else:
-            reply_text = "တောင်းပန်ပါတယ်။ ဒီပုံနဲ့ ကိုက်ညီတဲ့ ရလဒ်ကို ရှာမတွေ့ပါဘူး။ 😥"
-            
-    except requests.RequestException as e:
-        logger.error(f"API Error: {e}")
-        reply_text = "API ကို ခေါ်ဆိုရာမှာ အမှားအယွင်း ဖြစ်သွားပါတယ်။ ခဏနေမှ ထပ်ကြိုးစားကြည့်ပါ။"
     except Exception as e:
-        logger.error(f"Unknown Error: {e}")
-        reply_text = f"တစ်ခုခု အမှားအယွင်း ဖြစ်သွားပါတယ်: {e}"
+        logger.error(f"Gemini AI မှ အဖြေတောင်းရာတွင် Error ဖြစ်ပါသည်: {e}")
+        await update.message.reply_text("တောင်းပန်ပါတယ်။ အခုချိန်မှာ အဖြေပေးလို့မရသေးပါဘူး။")
 
-    # User ကို အဖြေ ပြန်ပို့မယ်
-    await update.message.reply_text(reply_text, parse_mode='HTML')
 
 def main() -> None:
-    """Bot ကို စတင် run မယ်။"""
-    # Application ကို တည်ဆောက်မယ်
+    """Bot ကို စတင် Run မယ်။"""
+    # Application ကို Token နဲ့ တည်ဆောက်မယ်
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Command တွေကို မှတ်ပုံတင်မယ်
+    # Command တွေကို သတ်မှတ်မယ်
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("clear", clear))
 
-    # ပုံတွေ (Photo) ကို လက်ခံရရှိရင် handle_image function ကို ခေါ်ခိုင်းမယ်
-    application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+    # စာပို့တာတွေကို လက်ခံဖို့ MessageHandler ကို သတ်မှတ်မယ်
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Bot ကို စတင် run မယ် (Telegram ကနေ update တွေကို စောင့်နားထောင်မယ်)
-    print("Bot is running... (Press Ctrl+C to stop)")
+    # Bot ကို စတင်မေးမြန်းမှုတွေ လက်ခံဖို့ (Polling) စတင်မယ်
+    logger.info("Bot is starting...")
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
