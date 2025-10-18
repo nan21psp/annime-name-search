@@ -1,1 +1,4 @@
 python-3.11.7
+python-telegram-bot
+google-generativeai
+Pillow
