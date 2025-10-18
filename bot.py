@@ -41,7 +41,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         file_bytes = await photo_file.download_as_bytearray()
         
         # trace.moe API ကို ပုံ ပို့ပြီး ရှာခိုင်းမယ်
-        response = requests.post(TRACE_MOE_API_URL, files={"image": file_bytes})
+        # anilist info ပါအောင် ?anilistInfo=true ထည့်ပေးပါမယ်
+        response = requests.post(f"{TRACE_MOE_API_URL}?anilistInfo=true", files={"image": file_bytes})
         
         # HTTP error (4xx, 5xx) တွေရှိမရှိ စစ်ဆေးမယ်
         response.raise_for_status() 
@@ -53,20 +54,41 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # တူညီမှု အများဆုံး ရလဒ် (ပထမဆုံးတစ်ခု) ကို ယူမယ်
             result = data['result'][0]
             
-            # Anilist ကနေ အချက်အလက်တွေ ယူမယ်
-            title_romaji = result['anilist']['title']['romaji']
-            title_native = result['anilist']['title']['native']
-            similarity = result['similarity'] * 100 # % အနေနဲ့ပြမယ်
-            episode = result['episode']
+            # --- ERROR FIX START ---
             
-            # အဖြေကို စာသားအနေနဲ့ ပြင်ဆင်မယ်
-            reply_text = (
-                f"ရှာတွေ့ပါပြီ! 🎉\n\n"
-                f"<b>Anime (Romaji):</b> {title_romaji}\n"
-                f"<b>Anime (Native):</b> {title_native}\n"
-                f"<b>Episode:</b> {episode}\n"
-                f"<b>တူညီမှု (Similarity):</b> {similarity:.2f}%\n"
-            )
+            # အခြေခံ အချက်အလက်တွေကို အရင်ယူမယ်
+            similarity = result['similarity'] * 100 # % အနေနဲ့ပြမယ်
+            episode = result.get('episode', 'N/A')
+            filename = result.get('filename', 'N/A')
+
+            # anilist data က dictionary ဟုတ်၊ မဟုတ် စစ်ဆေးမယ်
+            if result.get('anilist') and isinstance(result['anilist'], dict):
+                # Dictionary ဖြစ်မှသာ title တွေကို ဆက်ယူမယ်
+                anilist_data = result['anilist']
+                # .get() ကို သုံးခြင်းဖြင့် 'romaji' or 'native' မပါရင်တောင် error မတက်တော့ပါ
+                title_romaji = anilist_data['title'].get('romaji', 'N/A')
+                title_native = anilist_data['title'].get('native', 'N/A')
+                
+                reply_text = (
+                    f"ရှာတွေ့ပါပြီ! 🎉\n\n"
+                    f"<b>Anime (Romaji):</b> {title_romaji}\n"
+                    f"<b>Anime (Native):</b> {title_native}\n"
+                    f"<b>Episode:</b> {episode}\n"
+                    f"<b>တူညီမှု (Similarity):</b> {similarity:.2f}%\n"
+                )
+            else:
+                # anilist data က int (ID) or null ဖြစ်နေခဲ့ရင်
+                # Anime နာမည်မပြဘဲ တခြားအချက်အလက်ကိုပဲ ပြပေးမယ်
+                reply_text = (
+                    f"ရှာတွေ့ပါပြီ! 🎉\n\n"
+                    f"ဒီပုံကို Anime scene တစ်ခုအနေနဲ့ တွေ့ရပေမယ့် နာမည်အတိအကျ မရရှိပါဘူး။\n"
+                    f"<b>Source File:</b> {filename}\n"
+                    f"<b>Episode:</b> {episode}\n"
+                    f"<b>တူညီမှု (Similarity):</b> {similarity:.2f}%\n"
+                )
+            
+            # --- ERROR FIX END ---
+
         else:
             reply_text = "တောင်းပန်ပါတယ်။ ဒီပုံနဲ့ ကိုက်ညီတဲ့ ရလဒ်ကို ရှာမတွေ့ပါဘူး။ 😥"
             
