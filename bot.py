@@ -8,7 +8,7 @@ from telegram.constants import ChatAction
 
 # --- ဒီနေရာတွေမှာ သင့် Key တွေကို အစားထိုးထည့်ပါ ---
 TELEGRAM_TOKEN = "8256277265:AAGkyWGaeNtSOKV678v7ixJkoNZKUMvq44A"
-GEMINI_API_KEY = "AIzaSyBS4l0RUNfromJXWAWE1x6-R2oxNEHeqgw"
+GEMINI_API_KEY = "AIzaSyD8XsDShWpSB64QwIBHlds48TqOaOyNeiI"
 # ----------------------------------------------------
 
 # Logging (Error တွေကြည့်ဖို့)
